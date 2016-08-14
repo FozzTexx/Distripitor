@@ -12,11 +12,12 @@
   CLUInteger density;
   CLUInteger pixelWidth;
   double stripWidth, stripHeight; /* in mm */
+  double bitHeight;
   CLMutableData *bitmap;
   CLUInteger byteWidth;
 
   char *pxbuf;
-  int pxcol, pxrow;
+  int pxcol, pxrow, pxlen;
 }
 
 -(id) init;

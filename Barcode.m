@@ -7,10 +7,12 @@
 #import "Barcode.h"
 
 #include <string.h>
+#include <math.h>
 
 #define MAXSTRIPWIDTH_MM	16.8
 #define MAXSTRIPLENGTH_MM	241
 #define MINBITWIDTH_MM		0.15
+#define MINBITHEIGHT_MM		0.20
 
 typedef struct __attribute__ ((packed)) {
   uint8_t data_sync;
@@ -103,6 +105,9 @@ typedef enum {
 
   [bitmap release];
   bitmap = [[CLMutableData alloc] initWithLength:rows * byteWidth];
+
+  bitHeight = stripWidth / pixelWidth;
+  bitHeight *= MINBITHEIGHT_MM / MINBITWIDTH_MM;
   
   return;  
 }
@@ -116,17 +121,22 @@ typedef enum {
   return;
 }
 
--(void) appendPixels
+-(void) insertPixelsAt:(int) aRow
 {
   int i, j;
   unsigned char *bptr;
   int byte;
+  int len;
 
 
-  if ((pxrow + 1) * byteWidth > [bitmap length])
+  len = (pxlen + 1) * byteWidth;
+  if (len > [bitmap length])
     [bitmap increaseLengthBy:byteWidth * 20];
   
-  bptr = [bitmap mutableBytes];
+  bptr = [bitmap mutableBytes] + aRow * byteWidth;
+  len = (pxlen - aRow) * byteWidth;
+  memmove(bptr + byteWidth, bptr, len);
+  pxlen++;
   
   for (i = 0; i < pixelWidth; i += 8) {
     for (byte = j = 0; j < 8; j++) {
@@ -134,9 +144,15 @@ typedef enum {
       if (i + j < pixelWidth)
 	byte |= !pxbuf[i + j];
     }
-    *(bptr + pxrow * byteWidth + i / 8) = byte;
+    *(bptr + i / 8) = byte;
   }
   
+  return;
+}
+
+-(void) appendPixels
+{
+  [self insertPixelsAt:pxrow];
   return;
 }
 
@@ -188,22 +204,13 @@ typedef enum {
   return;
 }
 
--(void) print
+-(void) prependHeader
 {
-  const unsigned char *bp;
-  int c;
-  int i, j;
-  int clen;
-  CLMutableData *mData;
-  BarcodeFields *fields;
-  BarcodeFileEntry *entry;
-  CLString *filename;
-  
-  
-  /* FIXME - make array of barcodes if there is too much data */
+  int len;
+  int i, c, clen;
 
+  
   pxrow = 0;
-  pxbuf = malloc(pixelWidth);
   
   memset(pxbuf, 1, pixelWidth);
   for (i = 0; i < 2; i++) {
@@ -218,8 +225,9 @@ typedef enum {
     pxbuf[12 + i * 4] = pxbuf[13 + i * 4] = 0;
     pxbuf[pixelWidth - 16 - i * 4] = pxbuf[pixelWidth - 15 - i * 4] = 0;
   }
-  
-  for (i = 0; i < 4; i++, pxrow++)
+
+  len = ceil(2 / bitHeight);
+  for (i = 0; i < len; i++, pxrow++)
     [self appendPixels];
 
   for (i = 0; i < density * 4; i += 8) {
@@ -231,9 +239,30 @@ typedef enum {
     }
   }
 
-  for (i = 0; i < 6; i++, pxrow++)
+  len = ceil(4 / bitHeight);
+  for (i = 0; i < len; i++, pxrow++)
     [self appendData];
 
+  return;
+}
+
+-(void) print
+{
+  const unsigned char *bp;
+  int c;
+  int i, j;
+  int clen;
+  CLMutableData *mData;
+  BarcodeFields *fields;
+  BarcodeFileEntry *entry;
+  CLString *filename;
+  
+  
+  /* FIXME - make array of barcodes if there is too much data */
+
+  pxbuf = malloc(pixelWidth);
+  [self prependHeader];
+  
   mData = [[CLMutableData alloc] initWithLength:sizeof(BarcodeFields)];
   fields = [mData mutableBytes];
   memset(fields, 0, sizeof(BarcodeFields));
@@ -282,11 +311,15 @@ typedef enum {
     [self appendData];
 
   /* FIXME - add CRC */
-  
+
   free(pxbuf);
 
+  stripHeight = bitHeight * pxlen;
+  fprintf(stderr, "Bit size: %fmm x %fmm\n", stripWidth / pixelWidth, bitHeight);
+  fprintf(stderr, "Strip size: %fmm x %fmm\n", stripWidth, stripHeight);
+  
   printf("P4\n");
-  printf("%i %i\n", pixelWidth, pxrow);
+  printf("%i %i\n", pixelWidth, pxlen);
   fwrite([bitmap bytes], [bitmap length], 1, stdout);
   
   return;
