@@ -314,7 +314,9 @@ typedef enum {
   fields = [mData mutableBytes];
   fields->length = [mData length] -
     (((size_t) &fields->checksum) - ((size_t) fields));
-  fields->checksum = 0x100 - c;
+  fields->checksum = 0x100 - ((c & 0xff) + (c >> 8));
+
+  [mData writeToFile:@"/tmp/strip-data" atomically:NO preserveBackups:0];
   
   pxcol = 0;
   bp = [mData bytes];
